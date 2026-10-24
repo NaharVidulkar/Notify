@@ -1,0 +1,6 @@
+{
+  "name": "Notify",
+  "description": "Mobile-first smart reminder app with customizable focus, themes, notifications, and calendar tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

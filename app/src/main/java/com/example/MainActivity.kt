@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import com.example.ui.components.NotifyLogoBadge
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -34,12 +35,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.Tune
+import com.example.ui.components.NotifyIcons
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
@@ -50,6 +47,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -93,13 +93,74 @@ class MainActivity : ComponentActivity() {
             val accentColor = Color(settings.accentColor.colorHex)
             val onAccentColor = Color(settings.accentColor.onAccentHex)
 
+            var isSplashVisible by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
+
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                kotlinx.coroutines.delay(1200)
+                isSplashVisible = false
+            }
+
             NotifyAppTheme(
                 darkTheme = isDark,
                 accentColor = accentColor,
                 onAccentColor = onAccentColor
             ) {
-                NotifyApp(viewModel)
+                androidx.compose.animation.AnimatedContent(
+                    targetState = isSplashVisible,
+                    label = "splashTransition"
+                ) { splash ->
+                    if (splash) {
+                        SplashScreen()
+                    } else {
+                        NotifyApp(viewModel)
+                    }
+                }
             }
+        }
+    }
+}
+
+@Composable
+fun SplashScreen() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            NotifyLogoBadge(size = 32.dp)
+            Spacer(modifier = Modifier.height(14.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Notify",
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 24.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "by Nahar",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = NotifyTheme.colors.mutedText
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Smart, reliable reminders",
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontSize = 13.sp
+                ),
+                color = NotifyTheme.colors.mutedText.copy(alpha = 0.8f)
+            )
         }
     }
 }
@@ -194,7 +255,8 @@ fun NotifyApp(viewModel: TaskViewModel) {
                                 onDeleteTask = { viewModel.deleteTask(it) },
                                 onSnoozeTask = { viewModel.snoozeTask(it) },
                                 onEditFocus = { viewModel.openEditFocus() },
-                                onShowNotificationPreview = { viewModel.showNotificationPreview(it) }
+                                onShowNotificationPreview = { viewModel.showNotificationPreview(it) },
+                                onNameChange = { viewModel.updateUserName(it) }
                             )
                         }
                         BottomTab.CALENDAR -> {
@@ -218,6 +280,16 @@ fun NotifyApp(viewModel: TaskViewModel) {
                                 onSnoozeChange = { viewModel.updateDefaultSnooze(it) },
                                 onDailySummaryChange = { viewModel.updateDailySummary(it) },
                                 onSoundChange = { viewModel.updateSound(it) },
+                                onRingtoneChange = { uri, title -> viewModel.updateRingtone(uri, title) },
+                                onRepeatRingtoneChange = { viewModel.updateRepeatRingtone(it) },
+                                onVibrateChange = { viewModel.updateVibrate(it) },
+                                onVibrationPatternChange = { viewModel.updateVibrationPattern(it) },
+                                onSoundEnabledChange = { viewModel.updateSoundEnabled(it) },
+                                onWakeScreenOverLockChange = { viewModel.updateWakeScreenOverLock(it) },
+                                onLockScreenPrivacyChange = { viewModel.updateLockScreenPrivacy(it) },
+                                onQuietHoursChange = { enabled, start, end, highPriority ->
+                                    viewModel.updateQuietHours(enabled, start, end, highPriority)
+                                },
                                 onProfileChange = { name, sub -> viewModel.updateProfile(name, sub) },
                                 onResetData = { viewModel.resetData() },
                                 onShowPreview = { viewModel.showNotificationPreview() },
@@ -303,7 +375,7 @@ fun NotifyBottomBar(
                 label = "Today",
                 selected = currentTab == BottomTab.TODAY,
                 selectedIcon = Icons.Filled.Notifications,
-                unselectedIcon = Icons.Outlined.Notifications,
+                unselectedIcon = NotifyIcons.NotificationsNone,
                 onClick = { onTabSelected(BottomTab.TODAY) },
                 testTag = "nav_today"
             )
@@ -312,8 +384,8 @@ fun NotifyBottomBar(
             BottomNavItem(
                 label = "Calendar",
                 selected = currentTab == BottomTab.CALENDAR,
-                selectedIcon = Icons.Filled.CalendarMonth,
-                unselectedIcon = Icons.Outlined.CalendarMonth,
+                selectedIcon = NotifyIcons.CalendarMonth,
+                unselectedIcon = NotifyIcons.CalendarMonth,
                 onClick = { onTabSelected(BottomTab.CALENDAR) },
                 testTag = "nav_calendar"
             )
@@ -322,8 +394,8 @@ fun NotifyBottomBar(
             BottomNavItem(
                 label = "Settings",
                 selected = currentTab == BottomTab.SETTINGS,
-                selectedIcon = Icons.Filled.Tune,
-                unselectedIcon = Icons.Outlined.Tune,
+                selectedIcon = NotifyIcons.Tune,
+                unselectedIcon = NotifyIcons.Tune,
                 onClick = { onTabSelected(BottomTab.SETTINGS) },
                 testTag = "nav_settings"
             )

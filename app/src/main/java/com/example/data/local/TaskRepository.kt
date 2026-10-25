@@ -63,10 +63,27 @@ class TaskRepository(private val context: Context) {
         val snooze = prefs.getInt("default_snooze", 10)
         val dailySummary = prefs.getString("daily_summary", "8:00 AM") ?: "8:00 AM"
         val sound = prefs.getString("sound", "Chime") ?: "Chime"
-        val userName = prefs.getString("user_name", "Nahar") ?: "Nahar"
+        val rawUserName = prefs.getString("user_name", UserSettings.DEFAULT_USER_NAME)
+        val userName = UserSettings.sanitizeUserName(rawUserName)
         val userSub = prefs.getString("user_sub", "YCCE · Nagpur") ?: "YCCE · Nagpur"
         val focus = prefs.getString("todays_focus", "DSA – Graphs & DP") ?: "DSA – Graphs & DP"
         val focusSub = prefs.getString("focus_subtext", "5 reminders today · Java track") ?: "5 reminders today · Java track"
+        val ringtoneUri = prefs.getString("ringtone_uri", null)
+        val ringtoneTitle = prefs.getString("ringtone_title", "Default notification sound") ?: "Default notification sound"
+        val repeatRingtone = prefs.getBoolean("repeat_ringtone", true)
+
+        // Notification settings
+        val vibrate = prefs.getBoolean("vibrate", true)
+        val vibrationPatternStr = prefs.getString("vibration_pattern", com.example.data.model.VibrationPattern.STANDARD.name)
+        val vibrationPattern = com.example.data.model.VibrationPattern.fromName(vibrationPatternStr)
+        val soundEnabled = prefs.getBoolean("sound_enabled", true)
+        val wakeScreenOverLock = prefs.getBoolean("wake_screen_over_lock", true)
+        val lockScreenPrivacyStr = prefs.getString("lock_screen_privacy", com.example.data.model.LockScreenPrivacy.SHOW_TITLE.name)
+        val lockScreenPrivacy = com.example.data.model.LockScreenPrivacy.fromName(lockScreenPrivacyStr)
+        val quietHoursEnabled = prefs.getBoolean("quiet_hours_enabled", false)
+        val quietHoursStart = prefs.getString("quiet_hours_start", "22:00") ?: "22:00"
+        val quietHoursEnd = prefs.getString("quiet_hours_end", "07:00") ?: "07:00"
+        val quietHoursHighPriorityCanRing = prefs.getBoolean("quiet_hours_high_priority_can_ring", true)
 
         _settings.value = UserSettings(
             themeMode = try { ThemeMode.valueOf(themeModeStr) } catch (e: Exception) { ThemeMode.LIGHT },
@@ -77,23 +94,54 @@ class TaskRepository(private val context: Context) {
             userName = userName,
             userSub = userSub,
             todaysFocus = focus,
-            focusSubtext = focusSub
+            focusSubtext = focusSub,
+            ringtoneUri = ringtoneUri,
+            ringtoneTitle = ringtoneTitle,
+            repeatRingtone = repeatRingtone,
+            vibrate = vibrate,
+            vibrationPattern = vibrationPattern,
+            soundEnabled = soundEnabled,
+            wakeScreenOverLock = wakeScreenOverLock,
+            lockScreenPrivacy = lockScreenPrivacy,
+            quietHoursEnabled = quietHoursEnabled,
+            quietHoursStart = quietHoursStart,
+            quietHoursEnd = quietHoursEnd,
+            quietHoursHighPriorityCanRing = quietHoursHighPriorityCanRing
         )
     }
 
     fun updateSettings(newSettings: UserSettings) {
-        _settings.value = newSettings
+        val sanitizedUserName = UserSettings.sanitizeUserName(newSettings.userName)
+        val cleanSettings = newSettings.copy(userName = sanitizedUserName)
+        _settings.value = cleanSettings
         prefs.edit()
-            .putString("theme_mode", newSettings.themeMode.name)
-            .putString("accent_color", newSettings.accentColor.name)
-            .putInt("default_snooze", newSettings.defaultSnoozeMinutes)
-            .putString("daily_summary", newSettings.dailySummaryTime)
-            .putString("sound", newSettings.sound)
-            .putString("user_name", newSettings.userName)
-            .putString("user_sub", newSettings.userSub)
-            .putString("todays_focus", newSettings.todaysFocus)
-            .putString("focus_subtext", newSettings.focusSubtext)
+            .putString("theme_mode", cleanSettings.themeMode.name)
+            .putString("accent_color", cleanSettings.accentColor.name)
+            .putInt("default_snooze", cleanSettings.defaultSnoozeMinutes)
+            .putString("daily_summary", cleanSettings.dailySummaryTime)
+            .putString("sound", cleanSettings.sound)
+            .putString("user_name", cleanSettings.userName)
+            .putString("user_sub", cleanSettings.userSub)
+            .putString("todays_focus", cleanSettings.todaysFocus)
+            .putString("focus_subtext", cleanSettings.focusSubtext)
+            .putString("ringtone_uri", cleanSettings.ringtoneUri)
+            .putString("ringtone_title", cleanSettings.ringtoneTitle)
+            .putBoolean("repeat_ringtone", cleanSettings.repeatRingtone)
+            .putBoolean("vibrate", cleanSettings.vibrate)
+            .putString("vibration_pattern", cleanSettings.vibrationPattern.name)
+            .putBoolean("sound_enabled", cleanSettings.soundEnabled)
+            .putBoolean("wake_screen_over_lock", cleanSettings.wakeScreenOverLock)
+            .putString("lock_screen_privacy", cleanSettings.lockScreenPrivacy.name)
+            .putBoolean("quiet_hours_enabled", cleanSettings.quietHoursEnabled)
+            .putString("quiet_hours_start", cleanSettings.quietHoursStart)
+            .putString("quiet_hours_end", cleanSettings.quietHoursEnd)
+            .putBoolean("quiet_hours_high_priority_can_ring", cleanSettings.quietHoursHighPriorityCanRing)
             .apply()
+    }
+
+    fun updateUserName(name: String) {
+        val sanitized = UserSettings.sanitizeUserName(name)
+        updateSettings(_settings.value.copy(userName = sanitized))
     }
 
     private fun loadTags() {

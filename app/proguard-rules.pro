@@ -1,21 +1,21 @@
 # Add project specific ProGuard rules here.
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Notify keep rules
+# Preserve all alarm, boot, and notification-action broadcast receivers
+-keep class com.example.notifications.ReminderAlarmReceiver { *; }
+-keep class com.example.notifications.BootReceiver { *; }
+-keep class com.example.notifications.NotificationActionReceiver { *; }
+-keep class com.example.notifications.ReminderAlarmScheduler { *; }
+-keep class com.example.notifications.NotificationHelper { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Preserve Activities
+-keep class com.example.MainActivity { *; }
+-keep class com.example.ui.ReminderAlertActivity { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Preserve data models, settings classes and enums
+-keep class com.example.data.model.** { *; }
+-keep class com.example.data.local.TaskRepository { *; }
+-keep class com.example.viewmodel.TaskViewModel { *; }
+-keepclassmembers enum * { *; }

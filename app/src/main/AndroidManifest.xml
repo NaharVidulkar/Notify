@@ -6,8 +6,10 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <application
         android:allowBackup="true"
@@ -30,6 +32,17 @@
             </intent-filter>
         </activity>
 
+        <!-- Full-Screen Lockscreen Reminder Alert Activity -->
+        <activity
+            android:name=".ui.ReminderAlertActivity"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:showForAllUsers="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.MyApplication" />
+
         <!-- Notification Action Buttons Receiver (Done & Snooze when app closed) -->
         <receiver
             android:name=".notifications.NotificationActionReceiver"
@@ -49,7 +62,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- Boot Completed Receiver to restore alarms after reboot -->
+        <!-- Boot Completed & Package Replaced Receiver to restore alarms after reboot/update -->
         <receiver
             android:name=".notifications.BootReceiver"
             android:enabled="true"

@@ -1,6 +1,19 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.app.AlarmManager
+import android.app.NotificationManager
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import com.example.ui.components.NotifyLogoBadge
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,23 +34,28 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.filled.Warning
+import com.example.ui.components.NotifyIcons
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,10 +63,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import com.example.R
 import com.example.data.model.Task
 import com.example.data.model.UserSettings
 import com.example.ui.components.TaskCard
@@ -70,21 +92,133 @@ fun TodayScreen(
     onSnoozeTask: (String) -> Unit,
     onEditFocus: () -> Unit,
     onShowNotificationPreview: (Task) -> Unit,
+    onNameChange: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("notify_prefs", Context.MODE_PRIVATE) }
+
     val today = remember { LocalDate.now() }
     val dateString = remember(today) {
         today.format(DateTimeFormatter.ofPattern("EEEE, d MMM"))
     }
 
     var selectedTaskForAction by remember { mutableStateOf<Task?>(null) }
+    var showEditNameDialog by remember { mutableStateOf(false) }
+    var editNameInput by remember(settings.userName) { mutableStateOf(settings.userName) }
+
+    // Notification Permission State (Android 13+)
+    var hasNotificationPermission by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        )
+    }
+
+    // Exact Alarm State (Android 12+)
+    var canScheduleExactAlarms by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+                alarmManager?.canScheduleExactAlarms() ?: true
+            } else {
+                true
+            }
+        )
+    }
+
+    // Full-screen Intent State (Android 14+)
+    var canUseFullScreenIntent by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                notificationManager?.canUseFullScreenIntent() ?: true
+            } else {
+                true
+            }
+        )
+    }
+
+    // Explanation dialog on first launch
+    var showPermissionRationaleDialog by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
+                !prefs.getBoolean("has_prompted_notif_explanation", false)
+            } else {
+                false
+            }
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasNotificationPermission = isGranted
+        prefs.edit().putBoolean("has_prompted_notif_explanation", true).apply()
+    }
+
+    // Refresh permission statuses on resume/recomposition
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            hasNotificationPermission = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            canScheduleExactAlarms = alarmManager?.canScheduleExactAlarms() ?: true
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            canUseFullScreenIntent = notificationManager?.canUseFullScreenIntent() ?: true
+        }
+    }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 20.dp)
     ) {
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // PART 1: Small Brand Row (above greeting)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            NotifyLogoBadge(size = 32.dp)
+            Spacer(modifier = Modifier.width(10.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Notify",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "by Nahar",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = NotifyTheme.colors.mutedText
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Date Label
         Text(
@@ -93,20 +227,268 @@ fun TodayScreen(
             color = NotifyTheme.colors.mutedText
         )
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(2.dp))
 
-        // Greeting
-        Text(
-            text = "Jay Shree Mataji, ${settings.userName}",
-            style = MaterialTheme.typography.headlineLarge.copy(
-                fontWeight = FontWeight.Bold,
-                fontSize = 26.sp,
-                letterSpacing = (-0.5).sp
-            ),
-            color = MaterialTheme.colorScheme.onBackground
-        )
+        // Greeting: fixed 'Jay Shree Mataji 🙏, ' and editable accent name on one line
+        val nameLength = settings.userName.length
+        val greetingFontSize = when {
+            nameLength > 16 -> 15.sp
+            nameLength > 12 -> 17.sp
+            nameLength > 8 -> 19.sp
+            nameLength > 5 -> 21.sp
+            else -> 23.sp
+        }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("greeting_row")
+        ) {
+            Text(
+                text = "Jay Shree Mataji 🙏, ",
+                style = MaterialTheme.typography.headlineLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = greetingFontSize,
+                    letterSpacing = (-0.4).sp
+                ),
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                softWrap = false
+            )
+
+            val accentTextColor = NotifyTheme.colors.accentText
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .clickable {
+                        editNameInput = settings.userName
+                        showEditNameDialog = true
+                    }
+                    .drawBehind {
+                        val strokeWidth = 1.5.dp.toPx()
+                        val y = size.height - 1.dp.toPx()
+                        drawLine(
+                            color = accentTextColor.copy(alpha = 0.5f),
+                            start = Offset(0f, y),
+                            end = Offset(size.width, y),
+                            strokeWidth = strokeWidth
+                        )
+                    }
+                    .padding(bottom = 2.dp)
+                    .testTag("greeting_name_tap")
+            ) {
+                Text(
+                    text = settings.userName,
+                    style = MaterialTheme.typography.headlineLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = greetingFontSize,
+                        letterSpacing = (-0.4).sp
+                    ),
+                    color = NotifyTheme.colors.accentText,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "Edit name",
+                    tint = NotifyTheme.colors.accentText.copy(alpha = 0.75f),
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+        }
+
+        // Notification Permission Warning Banner (if denied on Android 13+)
+        if (!hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = NotifyTheme.colors.priorityHigh.copy(alpha = 0.12f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, NotifyTheme.colors.priorityHigh.copy(alpha = 0.3f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = NotifyTheme.colors.priorityHigh,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Notifications are off",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NotifyTheme.colors.priorityHigh
+                        )
+                        Text(
+                            text = "Enable notifications to receive your reminders on time.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            try {
+                                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.parse("package:${context.packageName}")
+                                }
+                                context.startActivity(intent)
+                            }
+                        },
+                        shape = RoundedCornerShape(50),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NotifyTheme.colors.priorityHigh,
+                            contentColor = androidx.compose.ui.graphics.Color.White
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Text("Enable", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // Exact Alarm Permission Warning Banner (if restricted on Android 12+)
+        if (!canScheduleExactAlarms && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = NotifyTheme.colors.accent.copy(alpha = 0.15f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, NotifyTheme.colors.accent.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        imageVector = NotifyIcons.Schedule,
+                        contentDescription = null,
+                        tint = NotifyTheme.colors.accentText,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Exact alarms restricted",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NotifyTheme.colors.accentText
+                        )
+                        Text(
+                            text = "Allow exact alarms so reminders ring at the exact minute.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            try {
+                                val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                    data = Uri.parse("package:${context.packageName}")
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                // Fallback
+                            }
+                        },
+                        shape = RoundedCornerShape(50),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NotifyTheme.colors.accent,
+                            contentColor = NotifyTheme.colors.onAccent
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Text("Allow", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // Full-screen Intent Permission Banner (Android 14+)
+        if (!canUseFullScreenIntent && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = NotifyTheme.colors.accent.copy(alpha = 0.15f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, NotifyTheme.colors.accent.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = NotifyTheme.colors.accentText,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Lock-screen alerts restricted",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Allow full-screen reminders so Notify can wake the screen.",
+                            fontSize = 12.sp,
+                            color = NotifyTheme.colors.mutedText
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            try {
+                                val intent = Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
+                                    data = Uri.parse("package:${context.packageName}")
+                                }
+                                context.startActivity(intent)
+                            } catch (_: Exception) {
+                                try {
+                                    val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = Uri.parse("package:${context.packageName}")
+                                    }
+                                    context.startActivity(fallback)
+                                } catch (_: Exception) {}
+                            }
+                        },
+                        shape = RoundedCornerShape(50),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NotifyTheme.colors.accent,
+                            contentColor = NotifyTheme.colors.onAccent
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Text("Allow", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         // Today's focus card
         Surface(
@@ -156,7 +538,7 @@ fun TodayScreen(
                         .background(NotifyTheme.colors.accent.copy(alpha = 0.15f))
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.Edit,
+                        imageVector = Icons.Default.Edit,
                         contentDescription = "Edit focus",
                         tint = NotifyTheme.colors.accentText,
                         modifier = Modifier.size(18.dp)
@@ -219,7 +601,7 @@ fun TodayScreen(
                             .background(NotifyTheme.colors.accent.copy(alpha = 0.15f))
                     ) {
                         Icon(
-                            imageVector = Icons.Outlined.NotificationsNone,
+                            imageVector = NotifyIcons.NotificationsNone,
                             contentDescription = null,
                             tint = NotifyTheme.colors.accentText,
                             modifier = Modifier.size(36.dp)
@@ -269,6 +651,67 @@ fun TodayScreen(
         }
     }
 
+    // Explanation Dialog on first launch (Android 13+)
+    if (showPermissionRationaleDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                prefs.edit().putBoolean("has_prompted_notif_explanation", true).apply()
+                showPermissionRationaleDialog = false
+            },
+            icon = {
+                Icon(
+                    imageVector = NotifyIcons.NotificationsActive,
+                    contentDescription = null,
+                    tint = NotifyTheme.colors.accentText,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Enable Reminders",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Text(
+                    text = "Notify needs notifications to remind you on time.",
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showPermissionRationaleDialog = false
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    },
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NotifyTheme.colors.accent,
+                        contentColor = NotifyTheme.colors.onAccent
+                    )
+                ) {
+                    Text("Allow Notifications", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        prefs.edit().putBoolean("has_prompted_notif_explanation", true).apply()
+                        showPermissionRationaleDialog = false
+                    }
+                ) {
+                    Text("Not Now", color = NotifyTheme.colors.mutedText)
+                }
+            },
+            containerColor = NotifyTheme.colors.cardBg,
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
     // Task Action Dialog
     selectedTaskForAction?.let { task ->
         AlertDialog(
@@ -288,7 +731,7 @@ fun TodayScreen(
                         fontSize = 14.sp
                     )
 
-                    androidx.compose.material3.Divider(color = NotifyTheme.colors.border, thickness = 0.8.dp)
+                    Divider(color = NotifyTheme.colors.border, thickness = 0.8.dp)
 
                     // Mark Complete / Incomplete
                     Row(
@@ -302,7 +745,7 @@ fun TodayScreen(
                             .padding(vertical = 8.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.CheckCircle,
+                            imageVector = Icons.Default.Check,
                             contentDescription = null,
                             tint = NotifyTheme.colors.accent
                         )
@@ -345,7 +788,7 @@ fun TodayScreen(
                             .padding(vertical = 8.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Schedule,
+                            imageVector = NotifyIcons.Schedule,
                             contentDescription = null,
                             tint = NotifyTheme.colors.accentText
                         )
@@ -405,4 +848,73 @@ fun TodayScreen(
             shape = RoundedCornerShape(20.dp)
         )
     }
+
+    // Edit Name Dialog (Today Screen Greeting)
+    if (showEditNameDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditNameDialog = false },
+            title = {
+                Text(
+                    text = "Edit Your Name",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Greeting displays: Jay Shree Mataji 🙏, [Name]",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = NotifyTheme.colors.mutedText
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = editNameInput,
+                        onValueChange = {
+                            if (it.length <= 20) {
+                                editNameInput = it
+                            }
+                        },
+                        label = { Text("Your name") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("edit_greeting_name_input")
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${editNameInput.trim().length}/20 characters (empty resets to Nahar)",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                        color = NotifyTheme.colors.mutedText
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val sanitized = UserSettings.sanitizeUserName(editNameInput)
+                        onNameChange(sanitized)
+                        showEditNameDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NotifyTheme.colors.accent,
+                        contentColor = NotifyTheme.colors.onAccent
+                    ),
+                    modifier = Modifier.testTag("save_greeting_name_button")
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showEditNameDialog = false },
+                    modifier = Modifier.testTag("cancel_greeting_name_button")
+                ) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = NotifyTheme.colors.cardBg,
+            shape = RoundedCornerShape(18.dp)
+        )
+    }
 }
+

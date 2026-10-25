@@ -197,8 +197,21 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         repository.updateSettings(settings.value.copy(sound = sound))
     }
 
-    fun updateProfile(name: String, sub: String) {
+    fun updateRingtone(uri: String?, title: String) {
+        repository.updateSettings(settings.value.copy(ringtoneUri = uri, ringtoneTitle = title))
+        com.example.notifications.NotificationHelper.createNotificationChannel(getApplication())
+    }
+
+    fun updateRepeatRingtone(repeat: Boolean) {
+        repository.updateSettings(settings.value.copy(repeatRingtone = repeat))
+    }
+
+    fun updateProfile(name: String, sub: String = "YCCE, Nagpur") {
         repository.updateSettings(settings.value.copy(userName = name, userSub = sub))
+    }
+
+    fun updateUserName(name: String) {
+        repository.updateUserName(name)
     }
 
     fun updateFocus(title: String, subtitle: String) {
@@ -219,6 +232,48 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
     fun closeNotificationPreview() {
         _isNotificationPreviewOpen.value = false
+    }
+
+    fun updateVibrate(vibrate: Boolean) {
+        val updated = settings.value.copy(vibrate = vibrate)
+        repository.updateSettings(updated)
+        NotificationHelper.ensureNotificationChannel(getApplication(), updated)
+    }
+
+    fun updateVibrationPattern(pattern: com.example.data.model.VibrationPattern) {
+        val updated = settings.value.copy(vibrationPattern = pattern)
+        repository.updateSettings(updated)
+        NotificationHelper.ensureNotificationChannel(getApplication(), updated)
+    }
+
+    fun updateSoundEnabled(enabled: Boolean) {
+        val updated = settings.value.copy(soundEnabled = enabled)
+        repository.updateSettings(updated)
+        NotificationHelper.ensureNotificationChannel(getApplication(), updated)
+    }
+
+    fun updateWakeScreenOverLock(wake: Boolean) {
+        repository.updateSettings(settings.value.copy(wakeScreenOverLock = wake))
+    }
+
+    fun updateLockScreenPrivacy(privacy: com.example.data.model.LockScreenPrivacy) {
+        repository.updateSettings(settings.value.copy(lockScreenPrivacy = privacy))
+    }
+
+    fun updateQuietHours(
+        enabled: Boolean = settings.value.quietHoursEnabled,
+        start: String = settings.value.quietHoursStart,
+        end: String = settings.value.quietHoursEnd,
+        highPriorityCanRing: Boolean = settings.value.quietHoursHighPriorityCanRing
+    ) {
+        repository.updateSettings(
+            settings.value.copy(
+                quietHoursEnabled = enabled,
+                quietHoursStart = start,
+                quietHoursEnd = end,
+                quietHoursHighPriorityCanRing = highPriorityCanRing
+            )
+        )
     }
 
     fun triggerSystemNotification(task: Task? = null) {
